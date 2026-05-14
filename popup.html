@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ASP Compat</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 320px;
+    font-family: "Sarabun", "Tahoma", -apple-system, sans-serif;
+    font-size: 14px;
+    color: #1a1a1a;
+    background: #fafafa;
+  }
+  header {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2c5282 100%);
+    color: #fff;
+    padding: 16px 18px;
+  }
+  header h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  header .subtitle {
+    font-size: 11px;
+    opacity: 0.75;
+    margin-top: 2px;
+  }
+  .status {
+    padding: 14px 18px;
+    background: #fff;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+  .status-row .label { color: #666; }
+  .status-row .value { font-weight: 500; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-on { background: #d4edda; color: #155724; }
+  .badge-off { background: #f8d7da; color: #721c24; }
+  .badge-na { background: #e2e3e5; color: #383d41; }
+
+  .controls { padding: 14px 18px; background: #fff; }
+  .control-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+  }
+  .control-row label {
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  /* Toggle switch */
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ccc;
+    border-radius: 22px;
+    transition: 0.2s;
+  }
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 16px; width: 16px;
+    left: 3px; bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  input:checked + .slider { background-color: #4CAF50; }
+  input:checked + .slider:before { transform: translateX(18px); }
+
+  button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 8px;
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  button:hover { background: #f0f0f0; border-color: #999; }
+  button.primary {
+    background: #2c5282;
+    color: #fff;
+    border-color: #2c5282;
+  }
+  button.primary:hover { background: #1e3a5f; }
+  button.danger {
+    color: #c0392b;
+    border-color: #e8b4ae;
+  }
+  button.danger:hover { background: #fdecea; }
+
+  footer {
+    padding: 10px 18px;
+    text-align: center;
+    font-size: 11px;
+    color: #999;
+    background: #fafafa;
+  }
+  footer a { color: #2c5282; text-decoration: none; cursor: pointer; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>ASP Legacy Compatibility</h1>
+    <div class="subtitle">v1.0.0 · ทำให้เว็บ ASP เก่าทำงานบน Chrome</div>
+  </header>
+
+  <div class="status">
+    <div class="status-row">
+      <span class="label">สถานะหน้านี้</span>
+      <span id="page-status" class="badge badge-na">กำลังตรวจ...</span>
+    </div>
+    <div class="status-row">
+      <span class="label">โดเมน</span>
+      <span class="value" id="host">-</span>
+    </div>
+    <div class="status-row">
+      <span class="label">ตรวจพบ .asp</span>
+      <span class="value" id="is-asp">-</span>
+    </div>
+    <div class="status-row">
+      <span class="label">Charset</span>
+      <span class="value" id="charset">-</span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="control-row">
+      <label for="toggle-enabled">เปิดใช้งาน Extension</label>
+      <label class="switch">
+        <input type="checkbox" id="toggle-enabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="control-row">
+      <label for="toggle-auto">Auto-detect หน้า .asp</label>
+      <label class="switch">
+        <input type="checkbox" id="toggle-auto">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <button id="btn-disable-host" class="danger">⊘ ปิดสำหรับโดเมนนี้</button>
+    <button id="btn-force-host">⊕ บังคับเปิดสำหรับโดเมนนี้</button>
+    <button id="btn-options" class="primary">⚙️ ตั้งค่าเพิ่มเติม</button>
+  </div>
+
+  <footer>
+    <a id="link-reload">↻ Reload หน้านี้</a> &nbsp;·&nbsp;
+    <a id="link-options">ตั้งค่า</a>
+  </footer>
+
+<script src="popup.js"></script>
+</body>
+</html>

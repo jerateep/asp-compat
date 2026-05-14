@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "ASP Legacy Compatibility Layer",
+  "version": "1.0.0",
+  "description": "ทำให้เว็บ Classic ASP เก่า (.asp) ทำงานบน Chrome/Edge สมัยใหม่ได้ โดยไม่ต้องแก้โค้ด server",
+
+  "permissions": [
+    "storage",
+    "scripting",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "<all_urls>"
+  ],
+
+  "background": {
+    "service_worker": "background.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["fixes.css"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": false
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["polyfill.js"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ASP Legacy Compatibility",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

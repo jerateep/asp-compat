@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>ASP Compat — ตั้งค่า</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Sarabun", "Tahoma", -apple-system, sans-serif;
+    background: #f5f5f7;
+    color: #1a1a1a;
+    line-height: 1.5;
+    padding: 40px 20px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  header { margin-bottom: 32px; }
+  header h1 {
+    font-size: 26px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #1e3a5f, #2c5282);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p { color: #666; margin-top: 6px; font-size: 14px; }
+
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    border: 1px solid #e8e8e8;
+  }
+  .card h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: #1e3a5f;
+    border-bottom: 2px solid #f0f0f0;
+    padding-bottom: 10px;
+  }
+  .card .desc {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 6px;
+    font-size: 14px;
+  }
+  textarea, select, input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-family: "SF Mono", "Consolas", monospace;
+    font-size: 13px;
+    background: #fafafa;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+  textarea:focus, select:focus, input:focus {
+    outline: none;
+    border-color: #2c5282;
+    background: #fff;
+  }
+
+  .toggle-field {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+  }
+  .switch {
+    position: relative; display: inline-block;
+    width: 44px; height: 24px;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ccc; border-radius: 24px;
+    transition: 0.2s;
+  }
+  .slider:before {
+    position: absolute; content: "";
+    height: 18px; width: 18px;
+    left: 3px; bottom: 3px;
+    background-color: white; border-radius: 50%;
+    transition: 0.2s;
+  }
+  input:checked + .slider { background-color: #4CAF50; }
+  input:checked + .slider:before { transform: translateX(20px); }
+
+  button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary { background: #2c5282; color: #fff; }
+  .btn-primary:hover { background: #1e3a5f; }
+  .btn-secondary { background: #e8e8e8; color: #333; margin-left: 8px; }
+  .btn-secondary:hover { background: #d8d8d8; }
+  .btn-danger { background: #fff; color: #c0392b; border: 1px solid #e8b4ae; }
+  .btn-danger:hover { background: #fdecea; }
+
+  .actions { margin-top: 20px; display: flex; align-items: center; }
+  .save-status {
+    margin-left: 12px;
+    color: #4CAF50;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .save-status.show { opacity: 1; }
+
+  .note {
+    background: #fff8e1;
+    border-left: 3px solid #ff9800;
+    padding: 10px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-top: 10px;
+    color: #663c00;
+  }
+
+  footer {
+    text-align: center;
+    margin-top: 40px;
+    color: #999;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>ASP Legacy Compatibility</h1>
+    <p>ตั้งค่าการทำงานของ Extension สำหรับเว็บ Classic ASP</p>
+  </header>
+
+  <div class="card">
+    <h2>การทำงานทั่วไป</h2>
+
+    <div class="toggle-field">
+      <div>
+        <label>เปิดใช้งาน Extension</label>
+        <div class="desc" style="margin: 0;">ปิดถ้าต้องการหยุดทำงานชั่วคราว</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="enabled">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-field">
+      <div>
+        <label>Auto-detect หน้า .asp</label>
+        <div class="desc" style="margin: 0;">ทำงานเฉพาะหน้า URL ลงท้าย .asp/.aspx</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="autoDetect">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <div class="toggle-field">
+      <div>
+        <label>Verbose Logging</label>
+        <div class="desc" style="margin: 0;">แสดง log ละเอียดใน DevTools Console</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="verbose">
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>โดเมนที่ปิดใช้งาน</h2>
+    <div class="desc">รายชื่อโดเมน (หนึ่งบรรทัดต่อหนึ่งโดเมน) ที่ไม่ให้ extension ทำงาน</div>
+    <div class="field">
+      <textarea id="disabledHosts" placeholder="example.com&#10;app.company.local"></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>บังคับเปิดสำหรับโดเมน</h2>
+    <div class="desc">โดเมนที่ให้ extension ทำงานเสมอ แม้ URL จะไม่ลงท้าย .asp (เช่นเว็บที่ใช้ URL rewriting)</div>
+    <div class="field">
+      <textarea id="forceEnabledHosts" placeholder="legacy.company.local&#10;intranet.example.co.th"></textarea>
+    </div>
+    <div class="note">
+      💡 ใส่โดเมนของระบบเก่าที่ใช้ URL rewriting (เช่น /Default.aspx ที่ map เป็น / )
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Encoding</h2>
+    <div class="field">
+      <label for="encodingOverride">วิธีจัดการ encoding</label>
+      <select id="encodingOverride">
+        <option value="auto">Auto-detect (แนะนำ)</option>
+        <option value="tis-620">บังคับ TIS-620 / Windows-874 (ไทยเก่า)</option>
+        <option value="utf-8">บังคับ UTF-8</option>
+        <option value="none">ปิด — ไม่เตือนเรื่อง encoding</option>
+      </select>
+    </div>
+    <div class="note">
+      ⚠️ Extension ไม่สามารถ re-decode หน้าได้หลัง browser parse เสร็จ ถ้าตัวอักษรเพี้ยน
+      ต้องแก้ที่ server (เพิ่ม <code>Response.Charset = "windows-874"</code> หรือ
+      <code>&lt;meta charset="windows-874"&gt;</code>)
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-primary" id="save">บันทึก</button>
+    <button class="btn-secondary" id="reset">ค่าเริ่มต้น</button>
+    <span class="save-status" id="save-status">✓ บันทึกแล้ว</span>
+  </div>
+
+  <footer>
+    ASP Legacy Compatibility Layer v1.0.0 · Manifest V3
+  </footer>
+</div>
+
+<script src="options.js"></script>
+</body>
+</html>

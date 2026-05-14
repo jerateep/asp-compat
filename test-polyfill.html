@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>ASP Compat Test</title></head>
+<body>
+<h1>ASP Compatibility Polyfill Test</h1>
+
+<form name="thisForm" id="thisForm">
+  <input type="text" name="txt_Project" id="txt_Project" value="">
+  <input type="text" name="txt_Other" value="initial">
+  <select name="sel_Status">
+    <option value="A">Active</option>
+    <option value="I">Inactive</option>
+  </select>
+</form>
+
+<h2>Test Results</h2>
+<pre id="results"></pre>
+
+<script>
+const results = [];
+function test(label, fn) {
+  try {
+    const r = fn();
+    results.push((r === true ? '✓ PASS' : '✗ FAIL') + ': ' + label + (r !== true ? ' → ' + JSON.stringify(r) : ''));
+  } catch (e) {
+    results.push('✗ ERROR: ' + label + ' → ' + e.message);
+  }
+}
+
+// IE pattern 1: form.elements("name").value = "..."
+test('document.thisForm.elements("txt_Project") returns element', () => {
+  const el = document.thisForm.elements("txt_Project");
+  return el && el.name === "txt_Project";
+});
+
+test('Can set value via elements("name")', () => {
+  document.thisForm.elements("txt_Project").value = "test1";
+  return document.getElementById("txt_Project").value === "test1";
+});
+
+test('elements(0) returns first element', () => {
+  const el = document.thisForm.elements(0);
+  return el && el.name === "txt_Project";
+});
+
+test('elements["txt_Other"] still works (bracket)', () => {
+  return document.thisForm.elements["txt_Other"].value === "initial";
+});
+
+test('elements.namedItem still works', () => {
+  return document.thisForm.elements.namedItem("txt_Other").value === "initial";
+});
+
+test('elements.length still works', () => {
+  return document.thisForm.elements.length === 3;
+});
+
+test('document.forms("thisForm") returns form', () => {
+  const f = document.forms("thisForm");
+  return f && f.name === "thisForm";
+});
+
+test('document.forms(0) returns first form', () => {
+  const f = document.forms(0);
+  return f && f.name === "thisForm";
+});
+
+test('document.forms["thisForm"].elements("txt_Project")', () => {
+  document.forms["thisForm"].elements("txt_Project").value = "test2";
+  return document.getElementById("txt_Project").value === "test2";
+});
+
+test('select.options(0) returns option', () => {
+  const sel = document.thisForm.elements("sel_Status");
+  return sel.options(0).value === "A";
+});
+
+test('select.options("0") string-numeric', () => {
+  const sel = document.thisForm.elements("sel_Status");
+  return sel.options("0").value === "A";
+});
+
+test('window.event polyfill exists', () => {
+  return 'event' in window;
+});
+
+test('attachEvent exists', () => {
+  return typeof document.body.attachEvent === 'function';
+});
+
+document.getElementById('results').textContent = results.join('\n');
+</script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+/* ============================================================
+   ASP Legacy Compatibility — CSS Fixes
+   ============================================================ */
+
+/* ----- 1. ฟอนต์ legacy → system stack ที่อ่านง่าย ----- */
+/* MS Sans Serif, JasmineUPC, AngsanaUPC ไม่มีบน Mac/Linux และ Windows ใหม่ก็เริ่มหาย */
+body, td, th, font, input, select, textarea, button {
+  font-family:
+    "Sarabun",
+    "Noto Sans Thai",
+    "Leelawadee UI",
+    "Tahoma",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif !important;
+}
+
+/* ----- 2. <font> tag ที่ไม่ได้กำหนดสี → ใช้สี inherit ----- */
+font:not([color]) { color: inherit; }
+font:not([size]) { font-size: inherit; }
+
+/* ----- 3. ป้องกัน marquee/blink ทำลาย layout ----- */
+marquee {
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+}
+blink { animation: none; }
+
+/* ----- 4. แก้ table layout ที่ overflow ออกจากจอ ----- */
+/* ระวัง: ใช้กับ table ที่กว้างเกินจอเท่านั้น ไม่ทำลาย layout เดิม */
+table[width="100%"] {
+  max-width: 100%;
+}
+
+/* ----- 5. Print: รักษา layout เดิมของฟอร์ม/ใบเสร็จ ----- */
+@media print {
+  /* legacy ASP มักใช้ table ทำ layout ใบเสร็จ — อย่าแตะ */
+  table { border-collapse: collapse !important; }
+  body { font-family: "Sarabun", "Tahoma", sans-serif !important; }
+}
+
+/* ============================================================
+   Toast Notification UI
+   ============================================================ */
+.asp-compat-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 2147483647; /* สูงสุด */
+  padding: 14px 20px;
+  border-radius: 8px;
+  font-family: "Sarabun", "Tahoma", sans-serif !important;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 380px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  cursor: pointer;
+  animation: asp-compat-slide-in 0.3s ease-out;
+  color: #1a1a1a;
+  background: #fff;
+  border-left: 4px solid #888;
+}
+
+.asp-compat-toast-info {
+  background: #e8f4fd;
+  border-left-color: #2196F3;
+}
+
+.asp-compat-toast-warning {
+  background: #fff8e1;
+  border-left-color: #ff9800;
+  color: #663c00;
+}
+
+.asp-compat-toast-error {
+  background: #ffebee;
+  border-left-color: #f44336;
+  color: #5f1010;
+}
+
+.asp-compat-toast:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+  transition: all 0.2s ease;
+}
+
+@keyframes asp-compat-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ป้องกัน toast โดน CSS ของหน้าจริงทำให้เพี้ยน */
+.asp-compat-toast * {
+  all: unset;
+  font-family: inherit !important;
+  color: inherit !important;
+}
