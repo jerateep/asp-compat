@@ -84,6 +84,20 @@
                null;
       };
 
+      // Fallback สำหรับ numeric index ที่เป็น NaN/undefined
+      Object.defineProperty(callable, '__fallback', {
+        value: function(index) {
+          const all = document.getElementsByTagName('*');
+          const idx = Number(index);
+          if (isNaN(idx) || idx < 0) {
+            warn('document.all[' + index + '] = invalid index');
+            return null;
+          }
+          return all[idx] || null;
+        }
+      });
+
+
       const proxy = new Proxy(callable, handler);
       Object.defineProperty(document, 'all', {
         get: () => proxy,
