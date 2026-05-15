@@ -1,6 +1,15 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Content Script
-// ทำงานใน isolated world เพื่อตรวจหน้า ASP และ inject polyfill เข้า page world
+// v1.1.3
+//
+// Security fixes retained:
+//   #1 XSS: whitelist sanitization in fixBuggyLinks()
+//   #2 CSP: onerror handler on polyfill injection
+//   #4 Settings validation: type check + format validation
+//   #5 Toast: textContent only, no innerHTML
+//   #6 Safe URL logging: strip query string
+//
+// Rolled back: #3, #8 (domain restriction) — extension รองรับทุก domain
 // ============================================================
 
 (function() {
@@ -8,57 +17,115 @@
 
   const LOG_PREFIX = '[ASP-Compat]';
 
-  // ----- 1. ตรวจว่าเป็นหน้า ASP หรือไม่ -----
+  // ============================================================
+  // #6 SAFE URL LOGGING — strip query string and fragment
+  // ป้องกัน session token / sensitive param หลุดเข้า console log
+  // ============================================================
+  function safeLogPath() {
+    try {
+      return window.location.pathname || '(no path)';
+    } catch (e) {
+      return '(unavailable)';
+    }
+  }
+
+  // ============================================================
+  // ตรวจว่าเป็นหน้า ASP หรือไม่
+  // ============================================================
   function isAspPage() {
-    const url = window.location.href.toLowerCase();
     const pathname = window.location.pathname.toLowerCase();
-
-    // ตรวจจาก URL extension
     if (/\.(asp|aspx|asa|cer|cdx)(\?|#|$)/i.test(pathname)) return true;
-
-    // ตรวจจาก default document ที่นิยมใช้ใน IIS เก่า
     if (/\/(default|index)\.(asp|aspx)(\?|#|$)/i.test(pathname)) return true;
-
-    // ตรวจจาก meta generator (ASP บางตัวใส่ไว้)
     const generator = document.querySelector('meta[name="generator"]');
-    if (generator && /asp/i.test(generator.content)) return true;
-
+    if (generator && /asp/i.test(generator.content || '')) return true;
     return false;
   }
 
-  // ----- 2. โหลด settings จาก storage -----
-  async function getSettings() {
+  // ============================================================
+  // #4 SETTINGS VALIDATION — type check + format validation
+  // ห้าม trust ค่าจาก chrome.storage โดยตรง
+  // ============================================================
+  // RFC 1035 hostname regex — รองรับทุก domain
+  const HOSTNAME_REGEX = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+
+  function isValidHostname(s) {
+    if (typeof s !== 'string') return false;
+    if (s.length === 0 || s.length > 253) return false;
+    return HOSTNAME_REGEX.test(s);
+  }
+
+  const SETTINGS_SCHEMA = {
+    enabled:           { type: 'boolean', default: true },
+    autoDetect:        { type: 'boolean', default: true },
+    verbose:           { type: 'boolean', default: false },
+    disabledHosts:     { type: 'hostArray', default: [] },
+    forceEnabledHosts: { type: 'hostArray', default: [] },
+    encodingOverride:  { type: 'enum', default: 'auto',
+                         allowed: ['auto', 'tis-620', 'utf-8', 'none'] }
+  };
+
+  function validateSettings(raw) {
+    const clean = {};
+    for (const key of Object.keys(SETTINGS_SCHEMA)) {
+      const schema = SETTINGS_SCHEMA[key];
+      const value = raw && raw.hasOwnProperty(key) ? raw[key] : undefined;
+
+      switch (schema.type) {
+        case 'boolean':
+          clean[key] = (typeof value === 'boolean') ? value : schema.default;
+          break;
+        case 'enum':
+          clean[key] = (typeof value === 'string' && schema.allowed.includes(value))
+            ? value : schema.default;
+          break;
+        case 'hostArray':
+          if (!Array.isArray(value)) {
+            clean[key] = schema.default;
+            break;
+          }
+          // Validate format (RFC 1035) — ไม่ผูกกับ domain ใดเฉพาะ
+          clean[key] = value.filter(isValidHostname);
+          break;
+        default:
+          clean[key] = schema.default;
+      }
+    }
+    return clean;
+  }
+
+  function getSettings() {
     return new Promise(resolve => {
-      chrome.storage.sync.get({
-        enabled: true,
-        autoDetect: true,
-        disabledHosts: [],
-        forceEnabledHosts: [],
-        verbose: false,
-        encodingOverride: 'auto'
-      }, resolve);
+      try {
+        chrome.storage.sync.get(null, (raw) => {
+          if (chrome.runtime.lastError) {
+            console.warn(LOG_PREFIX, 'Storage error:', chrome.runtime.lastError.message);
+            resolve(validateSettings({}));
+            return;
+          }
+          resolve(validateSettings(raw));
+        });
+      } catch (e) {
+        resolve(validateSettings({}));
+      }
     });
   }
 
-  // ----- 3. ตรวจว่าควรเปิด extension บนหน้านี้หรือไม่ -----
+  // ============================================================
+  // ตรวจว่าควรเปิด extension บนหน้านี้หรือไม่
+  // ============================================================
   function shouldActivate(settings) {
     if (!settings.enabled) return false;
-
-    const host = window.location.hostname.toLowerCase();
-
-    // ถ้าโดน disable เฉพาะ host นี้
+    const host = (window.location.hostname || '').toLowerCase();
     if (settings.disabledHosts.includes(host)) return false;
-
-    // ถ้าถูก force enable
     if (settings.forceEnabledHosts.includes(host)) return true;
-
-    // ถ้า auto-detect: ใช้กับหน้า ASP เท่านั้น
     if (settings.autoDetect) return isAspPage();
-
     return false;
   }
 
-  // ----- 4. Inject polyfill เข้า page world (สำคัญ: ต้องก่อน script ของหน้าจริง) -----
+  // ============================================================
+  // #2 CSP-AWARE POLYFILL INJECTION
+  // เพิ่ม onerror handler เพื่อ detect CSP block และแจ้ง user
+  // ============================================================
   function injectPolyfill(settings) {
     try {
       const script = document.createElement('script');
@@ -66,145 +133,169 @@
       script.dataset.aspCompatVerbose = settings.verbose ? '1' : '0';
       script.dataset.aspCompatEncoding = settings.encodingOverride || 'auto';
 
-      // ใส่ใน <html> ก่อน <head> เพราะ document_start = head ยังไม่มี
+      script.onerror = function() {
+        console.error(
+          LOG_PREFIX,
+          'ไม่สามารถโหลด polyfill ได้ — อาจมี Content-Security-Policy block',
+          'path:', safeLogPath()
+        );
+        showToast(
+          '⚠️ ไม่สามารถเปิดโหมด Compatibility สำหรับหน้านี้ได้ ' +
+          'อาจมีนโยบายความปลอดภัยของหน้าจำกัดอยู่ — แจ้งทีม IT',
+          'warning'
+        );
+        try { script.remove(); } catch (_) {}
+      };
+      script.onload = function() {
+        try { script.remove(); } catch (_) {}
+      };
+
       const target = document.documentElement;
       target.insertBefore(script, target.firstChild);
 
-      // ลบ script tag หลังโหลดเสร็จ (polyfill ทำงานไปแล้ว)
-      script.onload = function() { script.remove(); };
-
       if (settings.verbose) {
-        console.log(LOG_PREFIX, 'Polyfill injected at', performance.now().toFixed(2), 'ms');
+        console.log(LOG_PREFIX, 'Polyfill injected on', safeLogPath());
       }
     } catch (e) {
-      console.error(LOG_PREFIX, 'Failed to inject polyfill:', e);
+      console.error(LOG_PREFIX, 'Failed to inject polyfill:', e.message || e);
     }
   }
 
-  // ----- 5. Auto-detect encoding และเตือนผู้ใช้ถ้าเพี้ยน -----
+  // ============================================================
+  // Encoding detection
+  // ============================================================
   function checkEncoding(settings) {
     document.addEventListener('DOMContentLoaded', () => {
-      const metaCharset = document.querySelector('meta[charset], meta[http-equiv="Content-Type" i]');
-      let detectedCharset = document.characterSet || document.charset || '';
-
+      const detectedCharset = document.characterSet || document.charset || '';
       if (settings.verbose) {
         console.log(LOG_PREFIX, 'Detected charset:', detectedCharset);
-        if (metaCharset) console.log(LOG_PREFIX, 'Meta charset tag:', metaCharset.outerHTML);
       }
 
-      // ตรวจอาการตัวอักษรไทยเพี้ยน (mojibake): 
-      // ถ้าหน้าเป็น TIS-620 แต่ browser decode เป็น UTF-8 จะเห็นเป็นตัวอักษรประหลาด
       const bodyText = document.body ? document.body.innerText.substring(0, 1000) : '';
       const hasMojibake = /[\u00C0-\u00FF]{3,}/.test(bodyText) && !/[\u0E00-\u0E7F]/.test(bodyText);
 
       if (hasMojibake) {
-        console.warn(LOG_PREFIX, 'พบอาการตัวอักษรเพี้ยน (mojibake) — หน้านี้อาจเป็น TIS-620/Windows-874');
-        console.warn(LOG_PREFIX, 'วิธีแก้: ขอให้ทีม IT เพิ่ม Content-Type header หรือ <meta charset> ที่ server');
+        console.warn(
+          LOG_PREFIX,
+          'พบอาการตัวอักษรเพี้ยน (mojibake) บน', safeLogPath(),
+          '— ทีม IT ควรเพิ่ม Response.Charset ที่ server'
+        );
         showToast('⚠️ ตัวอักษรอาจแสดงผลเพี้ยน — กรุณาแจ้งทีม IT', 'warning');
       }
     });
   }
 
-  // ----- 6. แก้ form ที่ไม่ได้กำหนด accept-charset -----
+  // ============================================================
+  // แก้ form ที่ไม่ได้กำหนด accept-charset
+  // ============================================================
   function patchForms(settings) {
     document.addEventListener('DOMContentLoaded', () => {
       const forms = document.querySelectorAll('form:not([accept-charset])');
       forms.forEach(form => {
-        // กำหนด accept-charset ตาม document charset เดิม
-        // ไม่เปลี่ยน field name, action, method
         const docCharset = document.characterSet || 'UTF-8';
         form.setAttribute('accept-charset', docCharset);
         if (settings.verbose) {
-          console.log(LOG_PREFIX, 'Patched form accept-charset:', form.action || '(no action)');
+          console.log(LOG_PREFIX, 'Patched form accept-charset on', safeLogPath());
         }
       });
     });
   }
 
-  // ----- 7. Toast UI สำหรับแจ้งเตือนผู้ใช้ -----
-  function showToast(message, level = 'info') {
+  // ============================================================
+  // #5 TOAST UI — textContent ONLY, never innerHTML
+  // ห้ามรับ HTML string จากแหล่งภายนอก
+  // ============================================================
+  function showToast(message, level) {
+    const safeMessage = (typeof message === 'string') ? message : String(message);
+    const safeLevel = ['info', 'warning', 'error'].includes(level) ? level : 'info';
+
     const inject = () => {
-      const toast = document.createElement('div');
-      toast.className = 'asp-compat-toast asp-compat-toast-' + level;
-      toast.textContent = message;
-      toast.addEventListener('click', () => toast.remove());
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 8000);
+      try {
+        const toast = document.createElement('div');
+        toast.className = 'asp-compat-toast asp-compat-toast-' + safeLevel;
+        toast.textContent = safeMessage; // #5: textContent (XSS-safe)
+        toast.addEventListener('click', () => {
+          try { toast.remove(); } catch (_) {}
+        });
+        document.body.appendChild(toast);
+        setTimeout(() => {
+          try { toast.remove(); } catch (_) {}
+        }, 8000);
+      } catch (_) {}
     };
     if (document.body) inject();
     else document.addEventListener('DOMContentLoaded', inject);
   }
 
   // ============================================================
-  // 7b. Auto-fix legacy bugs in generated links
-  // หน้า ASP บางหน้า generate JavaScript ที่มี NaN/undefined/null/empty index
-  // เช่น: document.all[NaN].value = "..."
-  // ปัญหานี้เกิดจาก server generate URL ผิด แต่ extension ช่วยแก้ที่ client ได้
-  //
-  // กลยุทธ์:
-  //   1. หาทุก <a onclick="..."> ที่มี pattern buggy
-  //   2. ถ้า URL มี value_object → แทนด้วย getElementsByName(value_object)[0]
-  //   3. Log warning ใน console เพื่อให้ dev รู้ว่าต้องแก้ที่ server
+  // #1 XSS HARDENING — Auto-fix legacy bugs in generated links
+  // Whitelist: อนุญาตเฉพาะ [A-Za-z0-9_$] ความยาว 1-64
   // ============================================================
+  const SAFE_IDENTIFIER = /^[A-Za-z0-9_$]{1,64}$/;
+
+  function isSafeIdentifier(s) {
+    return typeof s === 'string' && SAFE_IDENTIFIER.test(s);
+  }
+
   function fixBuggyLinks(settings) {
-    const urlParams = new URLSearchParams(window.location.search);
+    let urlParams;
+    try {
+      urlParams = new URLSearchParams(window.location.search);
+    } catch (e) {
+      return;
+    }
+
     const valueObject = urlParams.get('value_object');
-    const vForm = urlParams.get('v_form');
     const vIndex = urlParams.get('v_index');
 
-    // ตรวจว่าหน้านี้น่าจะเป็น search popup ที่มี bug หรือไม่
-    // - มี v_index=NaN หรือ undefined → buggy
-    // - หรือไม่ได้ส่ง v_index มาเลย → buggy
     const indexIsBad = !vIndex ||
                        vIndex === 'NaN' ||
                        vIndex === 'undefined' ||
                        vIndex === 'null' ||
-                       vIndex.trim() === '';
+                       (typeof vIndex === 'string' && vIndex.trim() === '');
 
-    if (!indexIsBad) return; // index ปกติ ไม่ต้อง fix
-    if (!valueObject) return; // ไม่มีข้อมูล fallback ก็ทำอะไรไม่ได้
+    if (!indexIsBad) return;
+    if (!valueObject) return;
+
+    if (!isSafeIdentifier(valueObject)) {
+      console.warn(
+        LOG_PREFIX,
+        'ปฏิเสธการ auto-fix: value_object ไม่ใช่ identifier ที่ปลอดภัย ' +
+        '(อนุญาตเฉพาะ A-Z, a-z, 0-9, _, $ ความยาว 1-64 ตัวอักษร)'
+      );
+      return;
+    }
 
     const fixLinks = () => {
-      // Pattern ที่จะ match:
-      //   document.all[NaN]
-      //   document.all[undefined]
-      //   document.all[]
-      //   document.all["NaN"]
-      //   document.all['NaN']
       const BUGGY_PATTERNS = [
         /document\.all\[\s*(?:NaN|undefined|null|""|''|"\s*"|'\s*')\s*\]/g,
-        /document\.all\[\s*\]/g  // empty bracket
+        /document\.all\[\s*\]/g
       ];
 
-      // สร้าง replacement: ใช้ getElementsByName เพื่อหา field ตามชื่อ
-      // escape valueObject เพื่อกัน injection
-      const safeValueObject = valueObject.replace(/['"\\\n\r]/g, '');
-      const replacement = `document.getElementsByName('${safeValueObject}')[0]`;
+      const replacement = "document.getElementsByName('" + valueObject + "')[0]";
 
       let fixedCount = 0;
-      const allLinks = document.querySelectorAll('a[onclick], button[onclick], [onclick]');
+      const allElements = document.querySelectorAll('a[onclick], button[onclick], [onclick]');
 
-      allLinks.forEach(el => {
+      allElements.forEach(el => {
         let onclick = el.getAttribute('onclick');
         if (!onclick) return;
         let changed = false;
-
         for (const pattern of BUGGY_PATTERNS) {
           if (pattern.test(onclick)) {
             onclick = onclick.replace(pattern, replacement);
             changed = true;
           }
         }
-
         if (changed) {
           el.setAttribute('onclick', onclick);
           fixedCount++;
         }
       });
 
-      // ตรวจ href javascript: ด้วย
       document.querySelectorAll('a[href^="javascript:"]').forEach(a => {
         let href = a.getAttribute('href');
+        if (!href) return;
         let changed = false;
         for (const pattern of BUGGY_PATTERNS) {
           if (pattern.test(href)) {
@@ -221,67 +312,71 @@
       if (fixedCount > 0) {
         console.warn(
           LOG_PREFIX,
-          '⚠️ พบ bug ในหน้า ' + window.location.pathname + ': ' +
-          'server generate document.all[' + vIndex + '] ซึ่งใช้งานไม่ได้\n' +
-          '   → Extension แก้ให้ชั่วคราว ' + fixedCount + ' จุด โดยใช้ getElementsByName("' + safeValueObject + '") แทน\n' +
-          '   💡 ทีม IT ควรแก้ที่ server: ' + window.location.pathname + ' ให้ตรวจ IsNumeric(v_index) ก่อนใช้ document.all[v_index]'
+          'พบ bug ที่ ' + safeLogPath() + ': document.all[' + vIndex + '] — ' +
+          'แก้ ' + fixedCount + ' จุด โดยใช้ getElementsByName ของ field "' + valueObject + '"'
         );
-
-        if (settings.verbose) {
-          console.log(LOG_PREFIX, 'Fixed links:', { valueObject, vForm, vIndex, fixedCount });
-        }
+        console.warn(
+          LOG_PREFIX,
+          '💡 ทีม IT ควรแก้ที่ server: ตรวจ IsNumeric(v_index) ก่อนใช้ document.all[v_index]'
+        );
       }
     };
 
-    // run ทั้ง DOM โหลดครั้งแรก และเมื่อ DOM เปลี่ยน (กรณี dynamic content)
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', fixLinks);
     } else {
       fixLinks();
     }
 
-    // เผื่อ ASP generate link แบบ dynamic หลัง load (rare แต่ defensive)
     if (document.body) {
-      const observer = new MutationObserver(() => fixLinks());
-      const startObserving = () => {
+      try {
+        const observer = new MutationObserver(() => fixLinks());
         observer.observe(document.body, { childList: true, subtree: true });
-        // หยุด observe หลัง 5 วินาที — เพียงพอสำหรับ ASP page load
         setTimeout(() => observer.disconnect(), 5000);
-      };
-      if (document.body) startObserving();
-      else document.addEventListener('DOMContentLoaded', startObserving);
+      } catch (_) {}
     }
   }
 
-  // ----- 8. ฟัง message จาก popup (toggle on/off, etc.) -----
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (msg.type === 'ASP_COMPAT_PING') {
-      sendResponse({
-        active: window.__aspCompatActive || false,
-        isAsp: isAspPage(),
-        host: window.location.hostname,
-        charset: document.characterSet
-      });
-    }
-    return true;
-  });
+  // ============================================================
+  // Message listener (สำหรับ popup)
+  // ============================================================
+  try {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (msg && msg.type === 'ASP_COMPAT_PING') {
+        sendResponse({
+          active: !!window.__aspCompatActive,
+          isAsp: isAspPage(),
+          host: window.location.hostname,
+          charset: document.characterSet
+        });
+      }
+      return true;
+    });
+  } catch (_) {}
 
-  // ----- MAIN -----
+  // ============================================================
+  // MAIN
+  // ============================================================
   getSettings().then(settings => {
     if (!shouldActivate(settings)) {
-      if (settings.verbose) console.log(LOG_PREFIX, 'Skipped on', window.location.hostname);
+      if (settings.verbose) {
+        console.log(LOG_PREFIX, 'Skipped on', safeLogPath());
+      }
       return;
     }
 
     window.__aspCompatActive = true;
-    if (settings.verbose) console.log(LOG_PREFIX, 'Activating on', window.location.href);
+    if (settings.verbose) {
+      console.log(LOG_PREFIX, 'Activating on', safeLogPath());
+    }
 
     injectPolyfill(settings);
     checkEncoding(settings);
     patchForms(settings);
     fixBuggyLinks(settings);
 
-    // อัพเดท badge
-    chrome.runtime.sendMessage({ type: 'ASP_COMPAT_ACTIVE' }).catch(() => {});
+    try {
+      chrome.runtime.sendMessage({ type: 'ASP_COMPAT_ACTIVE' }).catch(() => {});
+    } catch (_) {}
   });
 })();

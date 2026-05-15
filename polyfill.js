@@ -1,6 +1,6 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Polyfill (Page World)
-// v1.1.1
+// v1.1.3
 //
 // Security fixes retained:
 //   #5 Toast: textContent only, no innerHTML
@@ -544,7 +544,35 @@
   })();
 
   // ============================================================
-  // 8. String / Array methods ที่ IE legacy code อาจคาดหวัง
+  // 8. Element.sourceIndex polyfill
+  // IE-only: element.sourceIndex = position of element in document
+  // ใช้ใน onclick handlers: document.all[this.sourceIndex-N]
+  // ============================================================
+  (function polyfillSourceIndex() {
+    try {
+      if (!Element.prototype.hasOwnProperty('sourceIndex')) {
+        Object.defineProperty(Element.prototype, 'sourceIndex', {
+          get: function() {
+            // IE sourceIndex = position relative to ALL siblings (including text nodes)
+            // Walk from parentNode.firstChild to this element
+            if (!this.parentNode) return -1;
+            let index = 0;
+            let el = this.parentNode.firstChild;
+            while (el && el !== this) {
+              index++;
+              el = el.nextSibling;
+            }
+            return el === this ? index : -1;
+          },
+          configurable: true
+        });
+      }
+      log('Element.sourceIndex polyfilled');
+    } catch (e) { warn('sourceIndex polyfill failed:', e); }
+  })();
+
+  // ============================================================
+  // 9. String / Array methods ที่ IE legacy code อาจคาดหวัง
   // ============================================================
   (function polyfillLegacyMethods() {
     try {
@@ -574,7 +602,7 @@
   })();
 
   // ============================================================
-  // 9. Conditional comments fallback
+  // 10. Conditional comments fallback
   // IE conditional comments แสดงเป็น HTML comment ใน Chrome
   // ถ้ามี <!--[if !IE]>...<![endif]--> ต้องให้แสดงผล
   // ============================================================
@@ -603,7 +631,7 @@
   })();
 
   // ============================================================
-  // 10. Toast UI (#5 XSS-safe — textContent ONLY)
+  // 11. Toast UI (#5 XSS-safe — textContent ONLY)
   //
   // CRITICAL SECURITY RULE:
   //   ห้ามใช้ innerHTML, insertAdjacentHTML, document.write หรือ
