@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ASP Legacy Compatibility Layer",
-  "version": "1.1.5",
+  "version": "1.1.2",
   "description": "ทำให้เว็บ Classic ASP เก่า (.asp) ทำงานบน Chrome/Edge สมัยใหม่ได้ โดยไม่ต้องแก้โค้ด server",
 
   "permissions": [

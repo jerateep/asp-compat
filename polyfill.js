@@ -1,6 +1,6 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Polyfill (Page World)
-// v1.1.4
+// v1.1.2
 //
 // Security fixes retained:
 //   #5 Toast: textContent only, no innerHTML
@@ -558,34 +558,7 @@
   })();
 
   // ============================================================
-  // 8. Element.sourceIndex polyfill
-  // IE-only: element.sourceIndex = position in document.all
-  // ใช้ใน onclick handlers: document.all[this.sourceIndex-N]
-  // ============================================================
-  (function polyfillSourceIndex() {
-    try {
-      if (!Element.prototype.hasOwnProperty('sourceIndex')) {
-        Object.defineProperty(Element.prototype, 'sourceIndex', {
-          get: function() {
-            // IE sourceIndex = position in document.all (ALL elements in DOM order)
-            // Must walk entire document tree, not just siblings
-            const allElements = document.getElementsByTagName('*');
-            for (let i = 0; i < allElements.length; i++) {
-              if (allElements[i] === this) {
-                return i;
-              }
-            }
-            return -1;
-          },
-          configurable: true
-        });
-      }
-      log('Element.sourceIndex polyfilled');
-    } catch (e) { warn('sourceIndex polyfill failed:', e); }
-  })();
-
-  // ============================================================
-  // 9. String / Array methods ที่ IE legacy code อาจคาดหวัง
+  // 8. String / Array methods ที่ IE legacy code อาจคาดหวัง
   // ============================================================
   (function polyfillLegacyMethods() {
     try {
