@@ -1,5 +1,13 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Polyfill (Page World)
+// v1.1.1
+//
+// Security fixes retained:
+//   #5 Toast: textContent only, no innerHTML
+//   ActiveXObject: non-writable defineProperty (กัน hostile override)
+//
+// Rolled back: domain guard (ActiveX ทำงานทุก domain ที่ extension activate)
+//
 // ทำงานใน page world เพื่อให้ script ของหน้าจริงเข้าถึง API เก่าได้
 // ทุก polyfill ห่อด้วย try/catch + IIFE เพื่อไม่ให้ตัวหนึ่งพังแล้วลามตัวอื่น
 // ============================================================
@@ -12,8 +20,8 @@
   const VERBOSE = currentScript && currentScript.dataset.aspCompatVerbose === '1';
   const LOG = '[ASP-Compat-Polyfill]';
 
-  function log(...args) { if (VERBOSE) console.log(LOG, ...args); }
-  function warn(...args) { console.warn(LOG, ...args); }
+  function log() { if (VERBOSE) console.log.apply(console, [LOG].concat([].slice.call(arguments))); }
+  function warn() { console.warn.apply(console, [LOG].concat([].slice.call(arguments))); }
 
   // ============================================================
   // 1. document.all polyfill
@@ -33,6 +41,31 @@
           const all = document.getElementsByTagName('*');
           if (prop === 'length') return all.length;
           if (typeof prop === 'string' && /^\d+$/.test(prop)) return all[prop];
+          // IE: document.all.tags("tagname") → getElementsByTagName
+          if (prop === 'tags') {
+            return function(tagName) {
+              return document.getElementsByTagName(String(tagName || '*'));
+            };
+          }
+          // IE: document.all.item(index) หรือ document.all.item(name)
+          if (prop === 'item') {
+            return function(key) {
+              if (typeof key === 'number' || /^\d+$/.test(String(key))) {
+                return all[Number(key)] || null;
+              }
+              return document.getElementById(String(key)) ||
+                     document.getElementsByName(String(key))[0] ||
+                     null;
+            };
+          }
+          // IE: document.all.namedItem(name)
+          if (prop === 'namedItem') {
+            return function(name) {
+              return document.getElementById(String(name)) ||
+                     document.getElementsByName(String(name))[0] ||
+                     null;
+            };
+          }
           // document.all("name") หรือ document.all["name"] → คืน element ที่มี id หรือ name นั้น
           if (typeof prop === 'string') {
             return document.getElementById(prop) ||
@@ -383,19 +416,30 @@
   })();
 
   // ============================================================
-  // 6. ActiveXObject stub
-  // ทำให้ XMLHTTP ใช้งานได้ผ่าน XMLHttpRequest
-  // ตัวอื่น ๆ stub แบบ graceful fail พร้อม warning
+  // 6. ActiveXObject stub (non-writable for defense in depth)
+  //
+  // Security: ใช้ Object.defineProperty พร้อม writable:false, configurable:false
+  // เพื่อป้องกัน script ของหน้า override ตัว stub ของเรา
+  // sanitize progId ก่อน log/แสดง toast (กัน injection ใน UI)
   // ============================================================
   (function stubActiveX() {
     try {
-      if (typeof window.ActiveXObject !== 'undefined') return;
+      if (typeof window.ActiveXObject !== 'undefined') {
+        log('ActiveXObject already defined — skip');
+        return;
+      }
 
       const XMLHTTP_TYPES = /^(microsoft\.xmlhttp|msxml2\.xmlhttp|msxml2\.serverxmlhttp)/i;
       const XMLDOM_TYPES = /^(microsoft\.xmldom|msxml2\.domdocument)/i;
 
-      window.ActiveXObject = function(progId) {
-        const id = String(progId).toLowerCase();
+      // Sanitize progId สำหรับ log/toast
+      function safeProgId(p) {
+        const s = String(p == null ? '' : p);
+        return s.replace(/[^A-Za-z0-9._]/g, '?').substring(0, 64);
+      }
+
+      const activeXStub = function(progId) {
+        const id = String(progId == null ? '' : progId).toLowerCase();
 
         if (XMLHTTP_TYPES.test(id)) {
           log('ActiveXObject XMLHTTP → XMLHttpRequest');
@@ -404,13 +448,12 @@
 
         if (XMLDOM_TYPES.test(id)) {
           log('ActiveXObject XMLDOM → DOMParser');
-          // คืน object ที่เลียนแบบ MSXML DOMDocument พื้นฐาน
           return {
             async: true,
             loadXML: function(xmlString) {
               try {
                 const parser = new DOMParser();
-                this._doc = parser.parseFromString(xmlString, 'application/xml');
+                this._doc = parser.parseFromString(String(xmlString || ''), 'application/xml');
                 return !this._doc.querySelector('parsererror');
               } catch (e) { return false; }
             },
@@ -421,39 +464,65 @@
             get documentElement() { return this._doc ? this._doc.documentElement : null; },
             selectNodes: function(xpath) {
               if (!this._doc) return [];
-              const result = this._doc.evaluate(xpath, this._doc, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-              const nodes = [];
-              for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
-              return nodes;
+              try {
+                const result = this._doc.evaluate(
+                  String(xpath || ''), this._doc, null,
+                  XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null
+                );
+                const nodes = [];
+                for (let i = 0; i < result.snapshotLength; i++) nodes.push(result.snapshotItem(i));
+                return nodes;
+              } catch (e) { return []; }
             },
             selectSingleNode: function(xpath) {
               if (!this._doc) return null;
-              const result = this._doc.evaluate(xpath, this._doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-              return result.singleNodeValue;
+              try {
+                const result = this._doc.evaluate(
+                  String(xpath || ''), this._doc, null,
+                  XPathResult.FIRST_ORDERED_NODE_TYPE, null
+                );
+                return result.singleNodeValue;
+              } catch (e) { return null; }
             }
           };
         }
 
-        // ActiveX อื่น ๆ (Excel.Application, Scripting.FileSystemObject, etc.)
-        warn('ActiveXObject ไม่รองรับ:', progId, '— Chrome ไม่สามารถรัน ActiveX ได้');
-        showUserToast('⚠️ ฟีเจอร์ ActiveX (' + progId + ') ไม่รองรับบน Chrome — กรุณาติดต่อทีม IT');
+        // ActiveX อื่น ๆ — log แบบ sanitized แล้วคืน stub
+        const cleanId = safeProgId(progId);
+        warn('ActiveXObject ไม่รองรับ:', cleanId);
+        showUserToast('⚠️ ฟีเจอร์ ActiveX (' + cleanId + ') ไม่รองรับบน Chrome — กรุณาติดต่อทีม IT');
 
-        // คืน proxy ที่ throw แบบ controlled เมื่อถูกเรียก method
         return new Proxy({}, {
-          get(target, prop) {
+          get: function(target, prop) {
             return function() {
-              warn('ActiveX method called on unsupported object:', progId, '.', prop);
+              warn('ActiveX method called on unsupported object:', cleanId);
               return null;
             };
           },
-          set() { return true; }
+          set: function() { return true; }
         });
       };
 
-      // IE มี window.ActiveXObject เป็น object ไม่ใช่ undefined
-      // โค้ดเก่ามักเช็คด้วย: if (window.ActiveXObject) { ... }
-      log('ActiveXObject stubbed');
-    } catch (e) { warn('ActiveXObject stub failed:', e); }
+      // NON-WRITABLE: ป้องกัน hostile page script overwrite
+      try {
+        Object.defineProperty(window, 'ActiveXObject', {
+          value: activeXStub,
+          writable: false,
+          configurable: false,
+          enumerable: false
+        });
+        log('ActiveXObject stubbed (non-writable)');
+      } catch (e) {
+        // ถ้า defineProperty fail (เช่น property มีอยู่แล้วและ non-configurable)
+        // ให้ fall back เป็น regular assignment พร้อม log warning
+        warn('Could not define ActiveXObject as non-writable, falling back:', e.message);
+        try {
+          window.ActiveXObject = activeXStub;
+        } catch (e2) {
+          warn('ActiveXObject stub fully failed:', e2.message);
+        }
+      }
+    } catch (e) { warn('ActiveXObject stub failed:', e.message || e); }
   })();
 
   // ============================================================
@@ -534,17 +603,30 @@
   })();
 
   // ============================================================
-  // 10. Toast UI (ใช้ภายใน polyfill)
+  // 10. Toast UI (#5 XSS-safe — textContent ONLY)
+  //
+  // CRITICAL SECURITY RULE:
+  //   ห้ามใช้ innerHTML, insertAdjacentHTML, document.write หรือ
+  //   วิธีใด ๆ ที่ parse string เป็น HTML ใน toast
+  //   เพราะ message อาจมาจากแหล่งที่ไม่ trust (เช่น progId จาก page script)
   // ============================================================
   function showUserToast(message) {
-    const inject = () => {
+    // Coerce เป็น string ก่อน + จำกัดความยาว
+    const safeMessage = String(message == null ? '' : message).substring(0, 300);
+
+    const inject = function() {
       try {
         const toast = document.createElement('div');
         toast.className = 'asp-compat-toast asp-compat-toast-warning';
-        toast.textContent = message;
-        toast.addEventListener('click', () => toast.remove());
+        // #5: textContent only — NEVER innerHTML
+        toast.textContent = safeMessage;
+        toast.addEventListener('click', function() {
+          try { toast.remove(); } catch (_) {}
+        });
         document.body.appendChild(toast);
-        setTimeout(() => { try { toast.remove(); } catch(_) {} }, 8000);
+        setTimeout(function() {
+          try { toast.remove(); } catch (_) {}
+        }, 8000);
       } catch (_) {}
     };
     if (document.body) inject();
@@ -552,6 +634,14 @@
   }
 
   // Mark ว่า polyfill ทำงานแล้ว
-  window.__aspCompatPolyfillLoaded = true;
+  try {
+    Object.defineProperty(window, '__aspCompatPolyfillLoaded', {
+      value: true,
+      writable: false,
+      configurable: false
+    });
+  } catch (_) {
+    window.__aspCompatPolyfillLoaded = true;
+  }
   log('All polyfills loaded successfully');
 })();

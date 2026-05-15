@@ -88,6 +88,37 @@ test('attachEvent exists', () => {
   return typeof document.body.attachEvent === 'function';
 });
 
+// v1.1.2 additions: document.all IE methods
+test('document.all.tags("input") returns collection', () => {
+  const inputs = document.all.tags("input");
+  return inputs && inputs.length === 3;
+});
+
+test('document.all.tags("select") returns collection', () => {
+  const selects = document.all.tags("select");
+  return selects && selects.length === 1;
+});
+
+test('document.all.item(0) returns first element', () => {
+  const first = document.all.item(0);
+  return first !== null && first.nodeType === 1;
+});
+
+test('document.all.item("txt_Project") returns element by name', () => {
+  const el = document.all.item("txt_Project");
+  return el && el.name === "txt_Project";
+});
+
+test('document.all.namedItem("thisForm") returns form', () => {
+  const f = document.all.namedItem("thisForm");
+  return f && f.name === "thisForm";
+});
+
+test('document.all.namedItem("txt_Other") returns input', () => {
+  const el = document.all.namedItem("txt_Other");
+  return el && el.value === "initial";
+});
+
 document.getElementById('results').textContent = results.join('\n');
 </script>
 </body>
