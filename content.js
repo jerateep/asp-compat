@@ -1,6 +1,6 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Content Script
-// v1.1.4
+// v1.1.5
 //
 // Security fixes retained:
 //   #1 XSS: whitelist sanitization in fixBuggyLinks()
@@ -237,6 +237,56 @@
     return typeof s === 'string' && SAFE_IDENTIFIER.test(s);
   }
 
+  // ============================================================
+  // SEARCH DIALOG FIX — Replace document.all[index] with safer approach
+  // ปัญหา: document.all[index] อาจชี้ไป <td>, <div> แทนที่ input field
+  // วิธีแก้: ใช้ getElementsByName(fieldName) แทน
+  // ============================================================
+  function fixSearchDialogLinks() {
+    // Only run on search pages (CMS_Search, CMS_SearchCust, etc.)
+    const pathname = window.location.pathname.toLowerCase();
+    if (!/cms_search/i.test(pathname)) return;
+
+    // Get field name from URL params (value_object)
+    let fieldName = '';
+    try {
+      const params = new URLSearchParams(window.location.search);
+      fieldName = params.get('value_object') || '';
+    } catch (e) {
+      return;
+    }
+
+    if (!fieldName || !isSafeIdentifier(fieldName)) return;
+
+    // Find all links with onclick containing document.all[number].value
+    const pattern = /window\.opener\.document\.all\[[\d\s]*\]\.value\s*=/g;
+    const allLinks = document.querySelectorAll('a[onclick], button[onclick]');
+
+    allLinks.forEach(link => {
+      const onclick = link.getAttribute('onclick');
+      if (!onclick || !pattern.test(onclick)) return;
+
+      // Replace: window.opener.document.all[N].value = "..."
+      // With:    window.opener.document.getElementsByName('fieldName')[0].value = "..."
+      const fixed = onclick.replace(
+        /window\.opener\.document\.all\[\s*[\d\s]*\s*\]\.value\s*=/g,
+        "var _el=window.opener.document.getElementsByName('" + fieldName + "')[0];if(_el){_el.value="
+      );
+
+      // Add closing and error handling
+      const withHandler = fixed.replace(
+        /window\.close\(\);/g,
+        "}else{alert('Error: Field \"" + fieldName + "\" not found on main page');console.error('[CMS_Search] Field not found:', '" + fieldName + "');}window.close();"
+      );
+
+      link.setAttribute('onclick', withHandler);
+
+      if (settings && settings.verbose) {
+        console.log(LOG_PREFIX, 'Fixed search dialog link for field:', fieldName);
+      }
+    });
+  }
+
   function fixBuggyLinks(settings) {
     let urlParams;
     try {
@@ -374,6 +424,7 @@
     checkEncoding(settings);
     patchForms(settings);
     fixBuggyLinks(settings);
+    fixSearchDialogLinks();
 
     try {
       chrome.runtime.sendMessage({ type: 'ASP_COMPAT_ACTIVE' }).catch(() => {});
