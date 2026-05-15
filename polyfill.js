@@ -1,6 +1,6 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Polyfill (Page World)
-// v1.1.3
+// v1.1.4
 //
 // Security fixes retained:
 //   #5 Toast: textContent only, no innerHTML

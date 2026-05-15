@@ -1,6 +1,6 @@
 // ============================================================
 // ASP Legacy Compatibility Layer — Content Script
-// v1.1.3
+// v1.1.4
 //
 // Security fixes retained:
 //   #1 XSS: whitelist sanitization in fixBuggyLinks()
