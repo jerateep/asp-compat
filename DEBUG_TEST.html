@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search Dialog Debug Test</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        .section { margin: 20px 0; padding: 10px; border: 1px solid #ccc; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .log { background: #f0f0f0; padding: 10px; margin: 10px 0; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+        input { padding: 5px; width: 300px; }
+        .good { color: green; }
+        .bad { color: red; }
+    </style>
+</head>
+<body>
+
+<h1>🔍 Search Dialog Debug Test</h1>
+
+<div class="section">
+    <h3>Step 1: Check Parent Window Access</h3>
+    <button onclick="testOpener()">Test window.opener</button>
+    <div id="log1" class="log"></div>
+</div>
+
+<div class="section">
+    <h3>Step 2: Check document.all in Parent</h3>
+    <button onclick="testDocumentAll()">Test document.all in parent</button>
+    <div id="log2" class="log"></div>
+</div>
+
+<div class="section">
+    <h3>Step 3: Check Element at Index 82</h3>
+    <button onclick="testIndex82()">Check element at [82]</button>
+    <div id="log3" class="log"></div>
+</div>
+
+<div class="section">
+    <h3>Step 4: Simulate Search Click</h3>
+    <button onclick="simulateClick()">Simulate onclick (with debug)</button>
+    <div id="log4" class="log"></div>
+</div>
+
+<div class="section">
+    <h3>Step 5: Manual Test</h3>
+    <button onclick="manualSet()">Manually set value (if element exists)</button>
+    <div id="log5" class="log"></div>
+</div>
+
+<script>
+function log(elementId, msg) {
+    const el = document.getElementById(elementId);
+    el.innerHTML += msg + '<br>';
+    console.log(msg);
+}
+
+function testOpener() {
+    const el = document.getElementById('log1');
+    el.innerHTML = '';
+
+    if (!window.opener) {
+        log('log1', '<span class="bad">❌ window.opener = null (not opened by another window)</span>');
+        log('log1', 'This test only works when this page is opened as a popup');
+        return;
+    }
+
+    log('log1', '<span class="good">✓ window.opener exists</span>');
+    log('log1', 'Opener URL: ' + window.opener.location.href);
+    log('log1', 'Opener has document: ' + (window.opener.document ? '✓' : '✗'));
+}
+
+function testDocumentAll() {
+    const el = document.getElementById('log2');
+    el.innerHTML = '';
+
+    if (!window.opener) {
+        log('log2', '<span class="bad">❌ No window.opener - cannot test</span>');
+        return;
+    }
+
+    const openerDoc = window.opener.document;
+    if (!openerDoc.all) {
+        log('log2', '<span class="bad">❌ window.opener.document.all NOT available</span>');
+        return;
+    }
+
+    log('log2', '<span class="good">✓ window.opener.document.all exists</span>');
+    log('log2', 'document.all.length = ' + openerDoc.all.length);
+    log('log2', 'Can access index 0: ' + (openerDoc.all[0] ? openerDoc.all[0].tagName : 'null'));
+}
+
+function testIndex82() {
+    const el = document.getElementById('log3');
+    el.innerHTML = '';
+
+    if (!window.opener || !window.opener.document.all) {
+        log('log3', '<span class="bad">❌ Cannot access parent document.all</span>');
+        return;
+    }
+
+    const element = window.opener.document.all[82];
+
+    if (!element) {
+        log('log3', '<span class="bad">❌ Element at index [82] = null</span>');
+        log('log3', 'Max available index: ' + (window.opener.document.all.length - 1));
+        return;
+    }
+
+    log('log3', '<span class="good">✓ Element found at [82]</span>');
+    log('log3', 'Tag: ' + element.tagName);
+    log('log3', 'ID: ' + (element.id || 'none'));
+    log('log3', 'Name: ' + (element.name || 'none'));
+    log('log3', 'Type: ' + (element.type || 'none'));
+    log('log3', 'Value: ' + (element.value || 'none'));
+    log('log3', 'Current value: "' + element.value + '"');
+
+    if (element.tagName !== 'INPUT' && element.tagName !== 'SELECT' && element.tagName !== 'TEXTAREA') {
+        log('log3', '<span class="bad">⚠️ Element is ' + element.tagName + ', not a form field!</span>');
+    } else {
+        log('log3', '<span class="good">✓ This is a form field</span>');
+    }
+}
+
+function simulateClick() {
+    const el = document.getElementById('log4');
+    el.innerHTML = '';
+
+    if (!window.opener || !window.opener.document.all) {
+        log('log4', '<span class="bad">❌ Cannot access parent</span>');
+        return;
+    }
+
+    try {
+        log('log4', 'Executing: window.opener.document.all[82].value="ITI : ITI"');
+
+        const element = window.opener.document.all[82];
+        log('log4', 'Element found: ' + (element ? '✓' : '✗'));
+
+        if (element) {
+            element.value = "ITI : ITI";
+            log('log4', '<span class="good">✓ Value set successfully</span>');
+            log('log4', 'New value: "' + element.value + '"');
+            log('log4', 'Now click "Check element at [82]" again to verify');
+        } else {
+            log('log4', '<span class="bad">❌ Element is null</span>');
+        }
+    } catch (e) {
+        log('log4', '<span class="bad">❌ ERROR: ' + e.message + '</span>');
+        console.error(e);
+    }
+}
+
+function manualSet() {
+    const el = document.getElementById('log5');
+    el.innerHTML = '';
+
+    if (!window.opener) {
+        log('log5', '<span class="bad">❌ No opener</span>');
+        return;
+    }
+
+    try {
+        const openerDoc = window.opener.document;
+        log('log5', 'Total elements in parent: ' + openerDoc.all.length);
+
+        // Try to find an input field
+        let found = false;
+        for (let i = 0; i < Math.min(openerDoc.all.length, 120); i++) {
+            const el = openerDoc.all[i];
+            if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT') && el.name) {
+                if (!found) {
+                    log('log5', '<span class="good">Found input fields in parent:</span>');
+                    found = true;
+                }
+                log('log5', '[' + i + '] &lt;' + el.tagName + ' name="' + el.name + '"&gt;');
+            }
+        }
+
+        if (!found) {
+            log('log5', '<span class="bad">No input fields found</span>');
+        }
+    } catch (e) {
+        log('log5', '<span class="bad">❌ Error: ' + e.message + '</span>');
+    }
+}
+
+// Auto-test on load
+window.addEventListener('load', function() {
+    log('log1', '<span class="good">Page loaded - run tests above</span>');
+});
+</script>
+
+</body>
+</html>
