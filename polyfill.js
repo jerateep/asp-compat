@@ -559,7 +559,7 @@
 
   // ============================================================
   // 8. Element.sourceIndex polyfill
-  // IE-only: element.sourceIndex = position of element in document
+  // IE-only: element.sourceIndex = position in document.all
   // ใช้ใน onclick handlers: document.all[this.sourceIndex-N]
   // ============================================================
   (function polyfillSourceIndex() {
@@ -567,16 +567,15 @@
       if (!Element.prototype.hasOwnProperty('sourceIndex')) {
         Object.defineProperty(Element.prototype, 'sourceIndex', {
           get: function() {
-            // IE sourceIndex = position relative to ALL siblings (including text nodes)
-            // Walk from parentNode.firstChild to this element
-            if (!this.parentNode) return -1;
-            let index = 0;
-            let el = this.parentNode.firstChild;
-            while (el && el !== this) {
-              index++;
-              el = el.nextSibling;
+            // IE sourceIndex = position in document.all (ALL elements in DOM order)
+            // Must walk entire document tree, not just siblings
+            const allElements = document.getElementsByTagName('*');
+            for (let i = 0; i < allElements.length; i++) {
+              if (allElements[i] === this) {
+                return i;
+              }
             }
-            return el === this ? index : -1;
+            return -1;
           },
           configurable: true
         });
